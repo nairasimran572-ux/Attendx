@@ -14,10 +14,11 @@ const VAPID_KEY =
   "BO8U-2N_B0scsXl7FV29qV6PvKUBBUQUvPHr5QEnZyG46W-brU9gEvtkl_xoLQD9C0s40g6v6U_QvbMnU_ixRAI";
 
 let messaging = null;
+let foregroundListenerAdded = false;
 
 async function initializeNotifications() {
-  if (!firebase.apps.length) {
-    firebase.initializeApp(firebaseConfig);
+  if (!window.firebase) {
+    throw new Error("Firebase SDK did not load.");
   }
 
   if (!("Notification" in window) ||
@@ -25,18 +26,40 @@ async function initializeNotifications() {
     throw new Error("This browser does not support web notifications.");
   }
 
+  if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+  }
+
+  if (!firebase.messaging.isSupported ||
+      !(await firebase.messaging.isSupported())) {
+    throw new Error("Firebase Messaging is not supported in this browser.");
+  }
+
   messaging = firebase.messaging();
 
-  messaging.onMessage((payload) => {
-    const title = payload.notification?.title || "AttendSmart";
-    const body = payload.notification?.body ||
-      "You have an attendance update.";
+  if (!foregroundListenerAdded) {
+    messaging.onMessage((payload) => {
+      const title =
+        payload.data?.title ||
+        payload.notification?.title ||
+        "AttendSmart";
 
-    toast(`${title}: ${body}`);
+      const body =
+        payload.data?.body ||
+        payload.notification?.body ||
+        "You have an attendance update.";
 
-    // The toast is shown while the app is open.
-    // Avoid showing a duplicate browser notification here.
-  });
+      if (typeof window.toast === "function") {
+        window.toast(`${title}: ${body}`);
+      } else {
+        console.log(`${title}: ${body}`);
+      }
+    });
+
+    foregroundListenerAdded = true;
+  }
+
+  return messaging;
 }
 
 async function enableNotifications() {
@@ -48,8 +71,7 @@ async function enableNotifications() {
     const permission = await Notification.requestPermission();
 
     if (permission !== "granted") {
-      toast("Notification permission was not granted.");
-      return;
+      throw new Error("Notification permission was not granted.");
     }
 
     const registration = await navigator.serviceWorker.register(
@@ -64,29 +86,40 @@ async function enableNotifications() {
     });
 
     if (!token) {
-      throw new Error("Could not generate notification token.");
+      throw new Error("Could not generate an FCM token.");
     }
 
     localStorage.setItem("attendsmart_fcm_token", token);
 
-    console.log("This browser's FCM token:", token);
-    toast("Notifications enabled for this browser.");
+    console.log("FCM browser token generated.");
+
+    if (typeof window.toast === "function") {
+      window.toast("Notifications enabled for this browser.");
+    }
 
     const button = document.getElementById("enableNotifications");
+
     if (button) {
       button.textContent = "✓ Notifications Enabled";
     }
 
+    return token;
+
   } catch (error) {
     console.error("Notification setup error:", error);
-    toast("Notification setup failed: " + error.message);
+
+    if (typeof window.toast === "function") {
+      window.toast("Notification setup failed: " + error.message);
+    }
+
+    return null;
   }
 }
 
 async function testNotification() {
   try {
     if (!("Notification" in window)) {
-      alert("Browser does not support notifications.");
+      alert("This browser does not support notifications.");
       return;
     }
 
@@ -96,16 +129,19 @@ async function testNotification() {
       permission = await Notification.requestPermission();
     }
 
-    if (permission === "granted") {
-      new Notification("AttendSmart Test", {
-        body: "Browser notifications are working!",
-        icon: "./favicon.ico"
-      });
-    } else {
-      alert("Notification permission denied.");
+    if (permission !== "granted") {
+      alert("Please allow notifications in your browser settings.");
+      return;
     }
+
+    new Notification("AttendSmart Test", {
+      body: "Browser notifications are working!",
+      icon: "./favicon.ico"
+    });
+
   } catch (error) {
     console.error("Test notification error:", error);
+    alert("Could not show the test notification: " + error.message);
   }
 }
 
