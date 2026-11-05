@@ -1,4 +1,5 @@
 
+
 const firebaseConfig = {
   apiKey: "AIzaSyDXid3Q1wiRCNRKSA8qKJ-cBJTTrfedWKw",
   authDomain: "attendx-smart-attendance.firebaseapp.com",
@@ -9,7 +10,8 @@ const firebaseConfig = {
   measurementId: "G-HRWKFL82SG"
 };
 
-const VAPID_KEY = "BO8U-2N_B0scsXl7FV29qV6PvKUBBUQUvPHr5QEnZyG46W-brU9gEvtkl_xoLQD9C0s40g6v6U_QvbMnU_ixRAI";
+const VAPID_KEY =
+  "BO8U-2N_B0scsXl7FV29qV6PvKUBBUQUvPHr5QEnZyG46W-brU9gEvtkl_xoLQD9C0s40g6v6U_QvbMnU_ixRAI";
 
 let messaging = null;
 
@@ -18,37 +20,27 @@ async function initializeNotifications() {
     firebase.initializeApp(firebaseConfig);
   }
 
+  if (!("Notification" in window) ||
+      !("serviceWorker" in navigator)) {
+    throw new Error("This browser does not support web notifications.");
+  }
+
   messaging = firebase.messaging();
 
   messaging.onMessage((payload) => {
-    const title =
-      payload.notification?.title || "AttendSmart";
-
-    const body =
-      payload.notification?.body || "You have an attendance update.";
+    const title = payload.notification?.title || "AttendSmart";
+    const body = payload.notification?.body ||
+      "You have an attendance update.";
 
     toast(`${title}: ${body}`);
 
-    // Show a notification while the app is open.
-    if (Notification.permission === "granted") {
-      new Notification(title, {
-        body,
-        icon: "./favicon.ico"
-      });
-    }
+    // The toast is shown while the app is open.
+    // Avoid showing a duplicate browser notification here.
   });
 }
 
 async function enableNotifications() {
   try {
-    if (!("Notification" in window)) {
-      throw new Error("This browser does not support notifications.");
-    }
-
-    if (!("serviceWorker" in navigator)) {
-      throw new Error("Service workers are not supported.");
-    }
-
     if (!messaging) {
       await initializeNotifications();
     }
@@ -75,15 +67,12 @@ async function enableNotifications() {
       throw new Error("Could not generate notification token.");
     }
 
-    // Temporary local storage for this browser.
     localStorage.setItem("attendsmart_fcm_token", token);
 
-    console.log("FCM registration token:", token);
-
-    toast("Notifications enabled successfully!");
+    console.log("This browser's FCM token:", token);
+    toast("Notifications enabled for this browser.");
 
     const button = document.getElementById("enableNotifications");
-
     if (button) {
       button.textContent = "✓ Notifications Enabled";
     }
@@ -94,32 +83,42 @@ async function enableNotifications() {
   }
 }
 
+async function testNotification() {
+  try {
+    if (!("Notification" in window)) {
+      alert("Browser does not support notifications.");
+      return;
+    }
+
+    let permission = Notification.permission;
+
+    if (permission === "default") {
+      permission = await Notification.requestPermission();
+    }
+
+    if (permission === "granted") {
+      new Notification("AttendSmart Test", {
+        body: "Browser notifications are working!",
+        icon: "./favicon.ico"
+      });
+    } else {
+      alert("Notification permission denied.");
+    }
+  } catch (error) {
+    console.error("Test notification error:", error);
+  }
+}
+
+window.enableNotifications = enableNotifications;
+window.testNotification = testNotification;
+
 document.addEventListener("DOMContentLoaded", () => {
   const button = document.getElementById("enableNotifications");
 
   if (button) {
     button.addEventListener("click", enableNotifications);
   }
-async function testNotification() {
-    if (!("Notification" in window)) {
-        alert("Browser does not support notifications");
-        return;
-    }
 
-    let permission = Notification.permission;
-
-    if (permission === "default") {
-        permission = await Notification.requestPermission();
-    }
-
-    if (permission === "granted") {
-        new Notification("AttendSmart Test", {
-            body: "Notifications are working successfully!"
-        });
-    } else {
-        alert("Notification permission denied");
-    }
-}
   initializeNotifications().catch(error => {
     console.error("Firebase initialization error:", error);
   });
