@@ -1,6 +1,12 @@
 
-importScripts('https://www.gstatic.com/firebasejs/13.2.0/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/13.2.0/firebase-messaging-compat.js');
+
+importScripts(
+  "https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"
+);
+
+importScripts(
+  "https://www.gstatic.com/firebasejs/10.13.2/firebase-messaging-compat.js"
+);
 
 firebase.initializeApp({
   apiKey: "AIzaSyDXid3Q1wiRCNRKSA8qKJ-cBJTTrfedWKw",
@@ -15,12 +21,40 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
-  const title = payload.notification?.title || "AttendX Attendance Alert";
+  // Display only data-only messages here.
+  // Notification payloads may already be displayed automatically by FCM.
+  const title = payload.data?.title || "AttendSmart Attendance Alert";
 
   const options = {
-    body: payload.notification?.body || "Your child has an attendance update.",
-    icon: "./favicon.ico"
+    body:
+      payload.data?.body ||
+      "Your child has an attendance update.",
+    icon: "./favicon.ico",
+    data: {
+      url: "./"
+    }
   };
 
-  self.registration.showNotification(title, options);
+  return self.registration.showNotification(title, options);
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+
+  event.waitUntil(
+    clients.matchAll({
+      type: "window",
+      includeUncontrolled: true
+    }).then((windowClients) => {
+      for (const client of windowClients) {
+        if ("focus" in client) {
+          return client.focus();
+        }
+      }
+
+      if (clients.openWindow) {
+        return clients.openWindow("./");
+      }
+    })
+  );
 });
