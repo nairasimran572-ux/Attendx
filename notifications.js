@@ -100,7 +100,26 @@ document.addEventListener("DOMContentLoaded", () => {
   if (button) {
     button.addEventListener("click", enableNotifications);
   }
+async function testNotification() {
+    if (!("Notification" in window)) {
+        alert("Browser does not support notifications");
+        return;
+    }
 
+    let permission = Notification.permission;
+
+    if (permission === "default") {
+        permission = await Notification.requestPermission();
+    }
+
+    if (permission === "granted") {
+        new Notification("AttendSmart Test", {
+            body: "Notifications are working successfully!"
+        });
+    } else {
+        alert("Notification permission denied");
+    }
+}
   initializeNotifications().catch(error => {
     console.error("Firebase initialization error:", error);
   });
