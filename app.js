@@ -74,8 +74,117 @@ async function verifyPendingFace(){if(!pendingStudent){setStatus("Scan a QR code
 function exportCsv(){const rows=[["Student Name","Student ID","Class","Date","Time","Method","Status"]];state.records.forEach(r=>{const s=state.students.find(x=>x.id===r.studentId);if(s)rows.push([s.name,s.studentCode,s.className,r.date,r.time,r.method,r.status])});const csv=rows.map(row=>row.map(v=>`"${String(v??"").replace(/"/g,'""')}"`).join(",")).join("\r\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="attendsmart-attendance.csv";a.click();URL.revokeObjectURL(a.href)}
 function init(){ $("todayLabel").textContent=new Date().toLocaleDateString(undefined,{weekday:"short",day:"numeric",month:"short",year:"numeric"});$("recordDate").value=today();renderAll();
   document.querySelectorAll(".nav-link").forEach(b=>b.addEventListener("click",()=>navigate(b.dataset.view)));document.querySelectorAll("[data-go]").forEach(b=>b.addEventListener("click",()=>navigate(b.dataset.go)));$("quickScanBtn").onclick=()=>navigate("scanner");
-  $("addStudentBtn").onclick=()=>openStudentDialog();$("closeDialog").onclick=$("cancelDialog").onclick=()=>$("studentDialog").close();$("studentSearch").addEventListener("input",renderStudents);
-  $("studentForm").addEventListener("submit",e=>{e.preventDefault();const edit=$("editStudentId").value,name=$("studentName").value.trim(),code=$("studentId").value.trim(),cls=$("studentClass").value.trim();if(!name||!code||!cls)return;const duplicate=state.students.some(s=>s.studentCode.toLowerCase()===code.toLowerCase()&&s.id!==edit);if(duplicate){toast("Student ID already exists.");return}if(edit){const s=state.students.find(x=>x.id===edit);Object.assign(s,{name,className:cls})}else state.students.push({id:crypto.randomUUID(),name,studentCode:code,className:cls,descriptor:null});saveState();$("studentDialog").close();toast("Student saved successfully")});
+  
+$("markAbsentBtn").onclick = async () => {
+
+    const date = $("recordDate").value || today();
+
+    const newlyAbsent = [];
+
+    state.students.forEach(student => {
+
+        const existing = attendanceFor(student.id, date);
+
+        if (!existing) {
+
+            state.records.push({
+                studentId: student.id,
+                date,
+                time: "—",
+                method: "Not checked in",
+                status: "Absent"
+            });
+
+            newlyAbsent.push(student);
+        }
+    });
+
+    saveState();
+
+    toast("Remaining students marked absent");
+
+    for (const student of newlyAbsent) {
+        await sendAbsentNotification(student, date);
+    }
+
+};
+openStudentDialog();$("closeDialog").onclick=$("cancelDialog").onclick=()=>$("studentDialog").close();$("studentSearch").addEventListener("input",renderStudents);
+  
+$("recordsTable").addEventListener("click", async (e) => {
+
+    const b = e.target.closest("[data-action]");
+    if (!b) return;
+
+    const s = state.students.find(
+        x => x.id === b.dataset.id
+    );
+
+    if (!s) return;
+
+    const date = $("recordDate").value || today();
+
+    let r = attendanceFor(s.id, date);
+
+    if (b.dataset.action === "present") {
+
+        if (r) {
+            Object.assign(r, {
+                status: "Present",
+                time: timeNow(),
+                method: "Manual"
+            });
+        } else {
+            state.records.push({
+                studentId: s.id,
+                date,
+                time: timeNow(),
+                method: "Manual",
+                status: "Present"
+            });
+        }
+
+        saveState();
+        toast("Student marked present");
+
+    } else if (b.dataset.action === "absent") {
+
+        const alreadyAbsent = r?.status === "Absent";
+
+        if (!r) {
+            r = {
+                studentId: s.id,
+                date,
+                time: "—",
+                method: "Manual",
+                status: "Absent"
+            };
+
+            state.records.push(r);
+
+        } else {
+            r.status = "Absent";
+            r.method = "Manual";
+        }
+
+        saveState();
+
+        if (!alreadyAbsent) {
+            await sendAbsentNotification(s, date);
+        }
+
+        toast("Student marked absent");
+    }
+
+});
+e.preventDefault();const edit=$("editStudentId").value,name=$("studentName").value.trim(),code=$("studentId").value.trim(),cls=$("studentClass").value.trim();if(!name||!code||!cls)return;const duplicate=state.students.some(s=>s.studentCode.toLowerCase()===code.toLowerCase()&&s.id!==edit);if(duplicate){toast("Student ID already exists.");return}if(edit){const s=state.students.find(x=>x.id===edit);Object.assign(s,{name,className:cls})}else state.students.push({
+    id: crypto.randomUUID(),
+    name,
+    studentCode: code,
+    className: cls,
+    descriptor: null,
+    parentEmail: "",
+    parentUid: ""
+});saveState();$("studentDialog").close();toast("Student saved successfully")});
   $("studentsTable").addEventListener("click", e => {
     const b = e.target.closest("[data-action]");
     if (!b) return;
@@ -146,3 +255,26 @@ window.addEventListener("beforeunload", () => {
 
 // Allow index.html to call this function after scanning an uploaded QR image
 window.onQrDecoded = onQrDecoded;
+async function sendAbsentNotification(student, date) {
+    if (typeof window.notifyParentAbsent !== "function") {
+        console.error("Firebase notification function is unavailable.");
+        toast("Attendance saved. Notification system unavailable.");
+        return;
+    }
+
+    try {
+        const result = await window.notifyParentAbsent(
+            student.id,
+            student.name,
+            date
+        );
+
+        if (result?.success) {
+            console.log("Parent notification sent:", student.name);
+        } else {
+            console.warn("Parent notification not confirmed:", result);
+        }
+    } catch (error) {
+        console.error("Parent notification error:", error);
+    }
+}
